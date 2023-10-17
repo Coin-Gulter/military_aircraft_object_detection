@@ -1,0 +1,10 @@
+dataset/
+train2/
+using/
+venv/
+*.cfg
+test.py
+*.keras
+*/*.zip
+*/archive/
+__pycache__/
