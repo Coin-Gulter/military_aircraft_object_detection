@@ -2,11 +2,12 @@ import xml.etree.ElementTree as et
 import cv2 as cv
 import time
 import re
+import random
 import numpy as np
 import time
 import parameters
+import keras.utils as utils
 
-input_size = 244
 
 class preprocesing():
     """
@@ -22,7 +23,13 @@ class preprocesing():
         # Get the paths to the training and test images.
         with open(self.h.train_file, mode='r') as tr_fl:
             files_name = tr_fl.readlines()
+
         self.tr_files_tree = [et.parse(self.h.data_annotation_path + re.sub('\n','',elem) +'.xml') for elem in files_name]
+
+        if self.h.number_train_images < len(self.tr_files_tree):
+            self.tr_files_tree = self.tr_files_tree[:self.h.number_train_images]
+
+        random.shuffle(self.tr_files_tree)
 
         self.tr_roots = [tree.getroot() for tree in self.tr_files_tree]
         self.train_files = [root.find('filename').text for root in self.tr_roots]
@@ -31,9 +38,16 @@ class preprocesing():
 
 
         if self.h.with_test:
+
             with open(self.h.test_file, mode='r') as ts_fl:
                 files_name = ts_fl.readlines()
+
             self.ts_files_tree = [et.parse(self.h.data_annotation_path + re.sub('\n','',elem) +'.xml') for elem in files_name]
+
+            if self.h.number_test_images < len(self.ts_files_tree):
+                self.ts_files_tree = self.ts_files_tree[:self.h.number_test_images]
+
+            random.shuffle(self.ts_files_tree)
 
             self.ts_roots = [tree.getroot() for tree in self.ts_files_tree]
             self.test_files = [root.find('filename').text for root in self.ts_roots]
@@ -48,38 +62,40 @@ class preprocesing():
             filename = re.sub(' ', '', filename)
             return re.sub(r'\.[a-z]{3,4}$', '.jpg', filename)
 
-    def encode_in_one_hot(self,number):
-        img_classes = self.h.image_classes[0]
-        onehot = [0]*len(img_classes)
-        onehot[number] = 1
-        return onehot
+    def check_obj_grid_part(self, obj_bbox):
+        grid_size = self.h.image_size / self.h.grid_partition
+        
+        grid_x = int(obj_bbox[0] / grid_size)
 
-    def format_image(self, img, bbox):
+        if grid_x >= self.h.grid_partition:
+            grid_x = self.h.grid_partition-1
+
+        grid_y = int(obj_bbox[1] / grid_size)
+
+        if grid_y >= self.h.grid_partition:
+            grid_y = self.h.grid_partition-1
+
+        return (int(grid_x), int(grid_y))
+
+    def format_bbox(self, bbox, ratio):
+        x, y, w, h = bbox[0], bbox[1], bbox[2], bbox[3]
+        # box = [int((x - 0.5*w)* width / r), int((y - 0.5*h) * height / r), int(w*width / r), int(h*height / r)]
+        box = [int(x / ratio), int(y / ratio), int(w / ratio), int(h / ratio)]
+        new_bbox = np.array([(box[0]+box[2]/2), (box[1]+box[3]/2), (box[2]/2), (box[3]/2)])
+        return new_bbox
+
+    def format_image(self, img):
         height, width, = img.shape 
         max_size = max(height, width)
-        r = max_size / self.h.image_size
-        new_width = int(width / r)
-        new_height = int(height / r)
+        ratio = max_size / self.h.image_size
+        new_width = int(width / ratio)
+        new_height = int(height / ratio)
         new_size = (new_width, new_height)
         resized = cv.resize(img, new_size, interpolation= cv.INTER_LINEAR)
         new_image = np.zeros((self.h.image_size, self.h.image_size), dtype=np.uint8)
         new_image[0:new_height, 0:new_width] = resized
 
-        new_box = []
-        for box in bbox:
-            x, y, w, h = box[0], box[1], box[2], box[3]
-            # box = [int((x - 0.5*w)* width / r), int((y - 0.5*h) * height / r), int(w*width / r), int(h*height / r)]
-            box = [int(x / r), int(y / r), int(w / r), int(h / r)]
-            new_box.extend([(box[0]+box[2]/2)/self.h.image_size, (box[1]+box[3]/2)/self.h.image_size,
-                            (box[2]/2)/self.h.image_size, (box[3]/2)/self.h.image_size])
-
-        return new_image, new_box
-    
-    def download_img(self, file_path, bbox):
-        img = cv.imread(file_path, cv.IMREAD_GRAYSCALE)
-        # print('img -- ', img)
-        new_img, new_bbox = self.format_image(img, bbox)
-        return new_img, new_bbox
+        return new_image, ratio
 
 
 
@@ -97,7 +113,9 @@ def prepare_data_train(h_parameters):
     preprocess = preprocesing(h_parameters)
 
     X_train = []
-    y_train = []
+    y_train_classification = []
+    y_train_detection = []
+    y_train_obj_exist = []
 
     length = len(preprocess.train_file_path)
     percentage = 0
@@ -113,32 +131,52 @@ def prepare_data_train(h_parameters):
 
             prev_time = time.time()
 
-        bbox = []
-        labels = []
+        # Read the image and augment it.
+        img = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
 
+        img, ratio = preprocess.format_image(img)
+        X_train.append(img)
+
+        bboxes = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.bbox_number*h_parameters.objects_number))
+        labels = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.num_classes*h_parameters.objects_number))
+        obj_exist = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.objects_number))
+
+        objects_numbers = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition))
+        
         for obj in preprocess.tr_roots[index].findall('object'):
+
             label_number = preprocess.h.image_classes[0][obj.find('name').text]
-            labels.extend(preprocess.encode_in_one_hot(label_number))
+            label = utils.to_categorical(label_number, h_parameters.num_classes)
+            
             xmin = int(obj.find('bndbox/xmin').text)
             ymin = int(obj.find('bndbox/ymin').text)
             xmax = int(obj.find('bndbox/xmax').text)
             ymax = int(obj.find('bndbox/ymax').text)
             w, h = (xmax-xmin),(ymax-ymin)
-            bbox.append([xmin, ymin, w, h])
+            bbox =  preprocess.format_bbox([xmin, ymin, w, h], ratio)
 
-        
-        # Read the image and augment it.
-        img, bbox = preprocess.download_img(img_path, bbox)
-        X_train.append(img)
-        # print('labels -- ', labels, 'bbox -- ', bbox)
-        number_of_missing_bbox_values = (4*preprocess.h.num_objects-len(bbox))
-        number_of_missing_label_values = (20*preprocess.h.num_classes-len(labels))
+            grid_x, grid_y = preprocess.check_obj_grid_part(bbox)
 
-        labels.extend([0]*number_of_missing_label_values)
-        bbox.extend([0]*number_of_missing_bbox_values)
-        y_train.append([labels, bbox])
+            obj_num = int(objects_numbers[grid_x, grid_y])
 
-    return X_train, y_train
+            start_bbox_point =  int(h_parameters.bbox_number*obj_num)
+            end_bbox_point = start_bbox_point + h_parameters.bbox_number
+
+            start_label_point =  int(h_parameters.num_classes*obj_num)
+            end_label_point = start_label_point + h_parameters.num_classes
+
+            bboxes[grid_x, grid_y, start_bbox_point:end_bbox_point] = bbox
+            labels[grid_x, grid_y, start_label_point:end_label_point] = label
+            obj_exist[grid_x, grid_y, obj_num] = 1
+
+            if obj_num < (h_parameters.objects_number-1):
+                objects_numbers[grid_x, grid_y] += 1
+
+        y_train_classification.append(labels)
+        y_train_detection.append(bboxes)
+        y_train_obj_exist.append(obj_exist)
+
+    return X_train, y_train_classification, y_train_detection, y_train_obj_exist
 
 
 def prepare_data_test(h_parameters):
@@ -155,7 +193,9 @@ def prepare_data_test(h_parameters):
     preprocess = preprocesing(h_parameters)
 
     X_test = []
-    y_test = []
+    y_test_classification = []
+    y_test_detection = []
+    y_test_obj_exist = []
 
     length = len(preprocess.test_file_path)
     percentage = 0
@@ -171,40 +211,64 @@ def prepare_data_test(h_parameters):
 
             prev_time = time.time()
 
-        bbox = []
-        labels = []
+        # Read the image and augment it.
+        img = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
 
-        for obj in preprocess.ts_roots[index].findall('object'):
+        img, ratio = preprocess.format_image(img)
+        X_test.append(img)
+
+        bboxes = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.bbox_number*h_parameters.objects_number))
+        labels = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.num_classes*h_parameters.objects_number))
+        obj_exist = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.objects_number))
+
+        objects_numbers = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition))
+        
+        for obj in preprocess.tr_roots[index].findall('object'):
+
             label_number = preprocess.h.image_classes[0][obj.find('name').text]
-            labels.extend(preprocess.encode_in_one_hot(label_number))
+            label = utils.to_categorical(label_number, h_parameters.num_classes)
+            
             xmin = int(obj.find('bndbox/xmin').text)
             ymin = int(obj.find('bndbox/ymin').text)
             xmax = int(obj.find('bndbox/xmax').text)
             ymax = int(obj.find('bndbox/ymax').text)
             w, h = (xmax-xmin),(ymax-ymin)
-            bbox.append([xmin, ymin, w, h])
+            bbox =  preprocess.format_bbox([xmin, ymin, w, h], ratio)
 
-        
-        # Read the image and augment it.
-        img, bbox = preprocess.download_img(img_path, bbox)
-        X_test.append(img)
-        # print('labels -- ', labels, 'bbox -- ', bbox)
-        number_of_missing_bbox_values = (4*preprocess.h.num_objects-len(bbox))
-        number_of_missing_label_values = (20*preprocess.h.num_classes-len(labels))
+            grid_x, grid_y = preprocess.check_obj_grid_part(bbox)
 
-        labels.extend([0]*number_of_missing_label_values)
-        bbox.extend([0]*number_of_missing_bbox_values)
-        y_test.append([labels, bbox])
+            obj_num = int(objects_numbers[grid_x, grid_y])
 
-    return X_test, y_test
+            start_bbox_point =  int(h_parameters.bbox_number*obj_num)
+            end_bbox_point = start_bbox_point + h_parameters.bbox_number
+
+            start_label_point =  int(h_parameters.num_classes*obj_num)
+            end_label_point = start_label_point + h_parameters.num_classes
+
+            bboxes[grid_x, grid_y, start_bbox_point:end_bbox_point] = bbox
+            labels[grid_x, grid_y, start_label_point:end_label_point] = label
+            obj_exist[grid_x, grid_y, obj_num] = 1
+
+            if obj_num < (h_parameters.objects_number-1):
+                objects_numbers[grid_x, grid_y] += 1
+
+        y_test_classification.append(labels)
+        y_test_detection.append(bboxes)
+        y_test_obj_exist.append(obj_exist)
+
+    return X_test, y_test_classification, y_test_detection, y_test_obj_exist
 
 
 if __name__ == '__main__':
     h_parameters = parameters.get_config()
-    xtrain, ytrain = prepare_data_train(h_parameters)
-    print('xtrain -- ',xtrain)
-    print('ytrain -- ', ytrain)
+    xtrain, ytrain_classification, ytrain_detection, ytrain_obj_existens = prepare_data_train(h_parameters)
+    # print('xtrain -- ',xtrain)
+    # print('ytrain classification -- ', ytrain_classification)
+    # print('ytrain detection -- ', ytrain_detection)
+    # print('ytrain obj existens -- ', ytrain_obj_existens)
 
-    xtest, ytest = prepare_data_test(h_parameters)
-    print('xtrain -- ',xtrain)
-    print('ytrain -- ', ytrain)
+    xtest, ytest_classification, ytest_detection, ytest_obj_existens = prepare_data_test(h_parameters)
+    # print('xtest -- ',xtest)
+    # print('ytest classification -- ', ytest_classification)
+    # print('ytest detection -- ', ytest_detection)
+    # print('ytest objects existens -- ', ytest_obj_existens)

@@ -2,13 +2,23 @@ import numpy as np
 import cv2 as cv
 import os
 import data_loader
+import utils
+import parameters
+from itertools import repeat
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D,Dropout, Dense, Flatten, MaxPooling2D
+from tensorflow.keras import Model
+from tensorflow.keras.layers import Conv2D, Dropout, Dense, Flatten, MaxPooling2D, UpSampling2D, ZeroPadding2D, LeakyReLU, Add, Concatenate, Lambda, Input
+from tensorflow.keras.regularizers import l2
 
+ 
+class BatchNormalization(tf.keras.layers.BatchNormalization):
+    def call(self, x, training=False):
+        if training is None: training = tf.constant(False)
+        training = tf.logical_and(training, self.trainable)
+        return super().call(x, training)
 
-
-class page_ai():
+class bbox_ai():
     """
     Class for the page_ai model.
 
@@ -35,21 +45,105 @@ class page_ai():
         else:
             # Create the model.
             print('Creating model...')
-            inputs = tf.keras.layers.Input(shape=self.input_size)
+            # inputs = tf.keras.layers.Input(shape=self.input_size)
                     
-            feature_extractor = self.build_feature_extractor(inputs)
+            # x = inputs = Input([None, None, 3])
+            # x = self.DarknetConv(x, 32, 3)
+            # x = self.DarknetBlock(x, 64, 1)
+            # x = self.DarknetBlock(x, 128, 2)
+            # x = x_36 = self.DarknetBlock(x, 256, 8)
+            # x = x_61 = self.DarknetBlock(x, 512, 8)
+            # x = self.DarknetBlock(x, 1024, 4)
 
-            model_adaptor = self.build_model_adaptor(feature_extractor)
+            self.model = self.yolo_v3(self.h.image_size, self.h.objects_number, self.h.num_classes, self.h.bbox_number)
 
-            classification_head = self.build_classifier_head(model_adaptor)
-
-            regressor_head = self.build_regressor_head(model_adaptor)
-
-            self.model = tf.keras.Model(inputs = inputs, outputs = [classification_head, regressor_head])
+            # self.model = tf.keras.Model(inputs = inputs, outputs = [classification_head, regressor_head])
             print('Model created')
 
         # Summarize the model.
         self.model.summary()
+
+    def backbone_conv(self, x, filters, size, strides=1, batch_norm=True):
+        if strides == 1:
+            padding = 'same'
+        else:
+            x = ZeroPadding2D(((1, 0), (1, 0)))(x)
+            padding = 'valid'
+        x = Conv2D(filters=filters, kernel_size=size, strides=strides, padding=padding, 
+                   use_bias=not batch_norm, kernel_regularizer=l2(0.0005))(x)
+        if batch_norm:
+            x = BatchNormalization()(x)
+            x = LeakyReLU(alpha=0.1)(x)
+        return x
+    
+    def backbone_res(self, x, filters):
+        previous = x
+        x = self.backbone_conv(x, filters, 2, 1)
+        x = self.backbone_conv(x, filters, 3)
+        x = Add()([previous , x])
+        return x
+    
+    def backbone_block(self, x, filters, blocks):
+        x = self.backbone_conv(x, filters, 3, strides=2)
+        for _ in repeat(None, blocks):
+            x = self.backbone_res(x, filters)
+        return x
+    
+    def darknet(self, name=None):
+        x = inputs = Input([None, None, 3])
+        x = self.backbone_conv(x, 32, 3)
+        x = self.backbone_block(x, 64, 1)
+        x = self.backbone_block(x, 128, 2)
+        x = x_36 = self.backbone_block(x, 256, 8)
+        x = x_61 = self.backbone_block(x, 512, 8)
+        x = self.backbone_block(x, 1024, 4)
+        return tf.keras.Model(inputs, (x_36, x_61, x), name=name)
+    
+    def yolo_conv(self, filters, name=None):
+        def yolo_conv(x_in):
+            if isinstance(x_in, tuple):
+                inputs = Input(x_in[0].shape[1:]), Input(x_in[1].shape[1:])
+                x, x_skip = inputs
+
+                x = self.backbone_conv(x, filters, 1)
+                x = UpSampling2D(2)(x)
+                x = Concatenate()([x, x_skip])
+            else:
+                x = inputs = Input(x_in.shape[1:])
+
+            x = self.backbone_conv(x, filters, 1)
+            x = self.backbone_conv(x, filters * 2, 3)
+            x = self.backbone_conv(x, filters, 1)
+            x = self.backbone_conv(x, filters * 2, 3)
+            x = self.backbone_conv(x, filters, 1)
+            return Model(inputs, x, name=name)(x_in)
+        return yolo_conv
+
+    def yolo_output(self, filters, classes, name=None):
+        def yolo_output(x_in):
+            x = inputs = Input(x_in.shape[1:])
+            x = self.backbone_conv(x, filters * 2, 3)
+            x = self.backbone_conv(x, classes, 1, batch_norm=False)
+            x = Lambda(lambda x: tf.reshape(x, (-1, tf.shape(x)[1], tf.shape(x)[2], classes)))(x)
+            return tf.keras.Model(inputs, x, name=name)(x_in)
+        return yolo_output
+    
+    def yolo_v3(self, size, objects_classes, classification_classes, bbox_classes, channels=3):
+            x = inputs = Input([size, size, channels])
+
+            x_36, x_61, x = self.darknet(name='yolo_darknet')(x)
+
+            x = self.yolo_conv(512, name='yolo_conv_0')(x)
+            output_0 = self.yolo_output(512, objects_classes, name='yolo_output_0')(x)
+
+            x = self.yolo_conv(256, name='yolo_conv_1')((x, x_61))
+            output_1 = self.yolo_output(256, classification_classes*objects_classes, name='yolo_output_1')(x)
+
+            x = self.yolo_conv(128, name='yolo_conv_2')((x, x_36))
+            output_2 = self.yolo_output(128, bbox_classes*objects_classes, name='yolo_output_2')(x)
+
+            return Model(inputs, (output_0, output_1, output_2), name='yolov3')
+
 
     def build_feature_extractor(self, inputs):
 
@@ -70,10 +164,13 @@ class page_ai():
         return x
 
     def build_classifier_head(self, inputs):
-        return tf.keras.layers.Dense(self.h.num_classes, activation='softmax', name = 'classifier_head')(inputs)
+        x = tf.keras.layers.Dense(self.h.num_classes*self.h.grid_partition*self.h.grid_partition)(inputs)
+        x = tf.keras.layers.Reshape((self.h.grid_partition, self.h.grid_partition, self.h.num_classes))(x)
+        return tf.keras.layers.Softmax(name = 'classifier_head')(x)
 
     def build_regressor_head(self, inputs):
-        return tf.keras.layers.Dense(units = self.h.regresion_number, name = 'regressor_head')(inputs)
+        x = tf.keras.layers.Dense(self.h.bbox_number*self.h.grid_partition*self.h.grid_partition, activation='relu')(inputs)
+        return tf.keras.layers.Reshape((self.h.grid_partition, self.h.grid_partition, self.h.bbox_number), name = 'regressor_head')(x)
 
     def train(self):
         """
@@ -101,15 +198,15 @@ class page_ai():
 
         # Evaluate the model on the test set.
         if self.h.with_test:
-            test_loss, test_acc = self.model.evaluate(np.array(X_test),
-                                                        np.array(y_test))
-            print('Tested lost:', test_loss)
-            print('Tested accuracy:', test_acc)
-
-        model_name = self.h.save_model_name
+            test_loss, test_class_loss, test_detect_loss, test_class_acc, test_detect_mse  = self.model.evaluate(X_test, y_test)
+            print('test loss -- ', test_loss)
+            print('Tested classification loss:', test_class_loss)
+            print('Tested detect loss:', test_detect_loss)
+            print('Tested classification accuracy:', test_class_acc)
+            print('Tested detect mse:', test_detect_mse)
 
         # Save the model.
-        self.model.save(os.path.join(self.h.save_model_folder, model_name))
+        self.model.save(os.path.join(self.h.save_model_folder, self.h.save_model_name))
     
 
     def predict(self, img:np.ndarray):
@@ -132,11 +229,9 @@ class page_ai():
             raise Exception(f'Given image not in correct format - {img.shape} , \
                                 try using image of shape (x, y, 1) for grayscale or (x, y, 3) if image colorful')
 
-        # Preprocess the image.
-        img_size = (self.h.image_size, self.h.image_size)
 
         # Resize the image.
-        resized_image = cv.resize(img, img_size)
+        resized_image = utils.format_image(img, self.h.image_size)
 
         # Normalize the image.
         binary_image = resized_image.astype('float32') / 255
@@ -149,3 +244,7 @@ class page_ai():
 
         return result
 
+
+if __name__ == '__main__':
+    h_conf = parameters.get_config()
+    boxer = bbox_ai(h_conf)

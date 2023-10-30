@@ -18,55 +18,75 @@ def loading_data(h_parameters):
     print('Start data loader...')
 
     # Load the training data.
-    X_train, y_train = preprocesing.prepare_data_train(h_parameters)
+    X_train, y_train_classification, y_train_detection, y_train_obj_exist = preprocesing.prepare_data_train(h_parameters)
 
-    X_train = np.array(X_train)
+    X_train = np.array(X_train)/255
     X_train = np.reshape(X_train, (len(X_train), h_parameters.image_size, h_parameters.image_size, 1))
-    y_train = np.array(y_train, dtype=object)
 
-    cv.imshow('img1', X_train[0])
-    cv.waitKey(0)
-    cv.imshow('img2', X_train[3])
-    cv.waitKey(0)
-    cv.imshow('img3', X_train[8])
-    cv.waitKey(0)
+    y_train_classification = np.array(y_train_classification)
+    y_train_detection = np.array(y_train_detection)/h_parameters.image_size
+    y_train_obj_exist = np.array(y_train_obj_exist)
 
-    print('y train -- ', y_train[5])
-    print('y train -- ', y_train[9])
-    print('y train -- ', y_train[19])
+    # cv.imshow('img1', X_train[0])
+    # cv.waitKey(0)
+    # cv.imshow('img2', X_train[3])
+    # cv.waitKey(0)
+    # cv.imshow('img3', X_train[8])
+    # cv.waitKey(0)
+
+    # print('y train classification -- ', y_train_classification[0])
+    # print('y train classification -- ', y_train_classification[3])
+    # print('y train classification -- ', y_train_classification[8])
+
+    # print('y train detection -- ', y_train_detection[0])
+    # print('y train detection -- ', y_train_detection[3])
+    # print('y train detection -- ', y_train_detection[8])
 
     print("X_train: ", X_train.shape)
-    print("y_train: ", y_train.shape)
+    print("y_train classification: ", y_train_classification.shape)
+    print("y_train detection: ", y_train_detection.shape)
+    print("y_train objects exist: ", y_train_obj_exist.shape)
 
     # If the test data exists, reshape it and normalize it.
     if h_parameters.with_test:
 
         # Load the test data.
-        X_test, y_test = preprocesing.prepare_data_test(h_parameters)
+        X_test, y_test_classification, y_test_detection, y_test_obj_exist = preprocesing.prepare_data_test(h_parameters)
 
-        X_test = np.array(X_test)
+        X_test = np.array(X_test)/255
         X_test = np.reshape(X_test, (len(X_test), h_parameters.image_size, h_parameters.image_size, 1))
-        y_test = np.array(y_test, dtype=object)
 
-        print("y_test: ", y_test.shape)
+        y_test_classification = np.array(y_test_classification)
+        y_test_detection = np.array(y_test_detection)/h_parameters.image_size
+        y_test_obj_exist = np.array(y_test_obj_exist)
+
+        # cv.imshow('test_img1', X_test[0])
+        # cv.waitKey(0)
+        # cv.imshow('test_img2', X_test[3])
+        # cv.waitKey(0)
+        # cv.imshow('test_img3', X_test[8])
+        # cv.waitKey(0)
+
+        # print('y test classification -- ', y_test_classification[0])
+        # print('y test classification -- ', y_test_classification[3])
+        # print('y test classification -- ', y_test_classification[8])
+
+        # print('y test detection -- ', y_test_detection[0])
+        # print('y test detection -- ', y_test_detection[3])
+        # print('y test detection -- ', y_test_detection[8])
+
         print("X_test: ", X_test.shape)
+        print("y_test classification: ", y_test_classification.shape)
+        print("y_test detection: ", y_test_detection.shape)
+        print("y_test objects exist: ", y_test_obj_exist.shape)
 
-        cv.imshow('test_img1', X_test[0])
-        cv.waitKey(0)
-        cv.imshow('test_img2', X_test[3])
-        cv.waitKey(0)
-        cv.imshow('test_img3', X_test[8])
-        cv.waitKey(0)
-
-        print('y test -- ', y_test[5])
-        print('y test -- ', y_test[9])
-        print('y test -- ', y_test[19])
     else:
         X_test = None
-        y_test = None
+        y_test_classification = None
+        y_test_detection = None
+        y_test_obj_exist = None
 
-
-    return X_train, y_train, X_test, y_test
+    return X_train, (y_train_classification, y_train_detection, y_train_obj_exist), X_test, (y_test_classification, y_test_detection, y_test_obj_exist)
 
 
 if __name__ == "__main__":

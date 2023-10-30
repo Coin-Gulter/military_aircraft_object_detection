@@ -183,13 +183,16 @@ def default_configs():
     h.image_size = 360  # An integer or a string WxH such as 360x360.
     h.batch_size = 64
 
-    h.image_classes = [{'A20':0,'A1':1,'A2':2,'A3':3,'A4':4,'A5':5,'A6':6,'A7':7,'A8':8,'A9':9,'A10':10,
-                       'A11':11,'A12':12,'A13':13,'A14':14,'A15':15,'A16':16,'A17':17,'A18':18,'A19':19}]
+    h.image_classes = [{'A20':1,'A1':2,'A2':3,'A3':4,'A4':5,'A5':6,'A6':7,'A7':8,'A8':9,'A9':10,'A10':11,
+                       'A11':12,'A12':13,'A13':14,'A14':15,'A15':16,'A16':17,'A17':18,'A18':19,'A19':20}]
 
     # dataset specific parameters
-    h.num_classes = 20   # actual classes.
-    h.regresion_number = '4'
-    h.num_objects = 50
+    h.num_classes = 21   # actual classes.
+    h.grid_partition = 10
+    h.objects_number = 1
+    h.bbox_number = 4
+    h.number_train_images = 2000
+    h.number_test_images = 1000
     h.train_file = 'dataset/ImageSets/Main/train.txt'
     h.test_file = 'dataset/ImageSets/Main/test.txt'
     h.data_annotation_path = 'dataset/Annotations/Horizontal Bounding Boxes/'
@@ -200,7 +203,7 @@ def default_configs():
 
     # optimization
     h.optimizer = 'adam'  # can be 'adam' or 'sgd'.
-    h.learning_rate = 0.0001  # 0.008 for adam.
+    h.learning_rate = 0.00001  # 0.008 for adam.
     h.lr_dropout = 0.3
     h.num_epochs = 6
     h.metrics = [{'classifier_head' : 'accuracy', 'regressor_head' : 'mse' }]
@@ -215,9 +218,9 @@ page_model_param_dict = {
     'military_aircraft':
         dict(
             image_size = 460,
-            num_epochs = 8,
+            num_epochs = 1,
             pretrained = False,
-            learning_rate = 0.006,
+            learning_rate = 0.000001,
             with_test = True,
             validation_split = 0.1,
             test_file = 'dataset/ImageSets/Main/test.txt',

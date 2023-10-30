@@ -3,6 +3,9 @@ train2/
 using/
 venv/
 *.cfg
+*.jpg
+/model2.py
+/*.keras
 test.py
 *.keras
 */*.zip
