@@ -191,8 +191,9 @@ def default_configs():
     h.grid_partition = 10
     h.objects_number = 1
     h.bbox_number = 4
-    h.number_train_images = 2000
-    h.number_test_images = 1000
+    h.input_channels = 1
+    h.number_train_images = 500
+    h.number_test_images = 100
     h.train_file = 'dataset/ImageSets/Main/train.txt'
     h.test_file = 'dataset/ImageSets/Main/test.txt'
     h.data_annotation_path = 'dataset/Annotations/Horizontal Bounding Boxes/'
@@ -203,13 +204,13 @@ def default_configs():
 
     # optimization
     h.optimizer = 'adam'  # can be 'adam' or 'sgd'.
-    h.learning_rate = 0.00001  # 0.008 for adam.
+    h.learning_rate = 0.001  # 0.008 for adam.
     h.lr_dropout = 0.3
     h.num_epochs = 6
-    h.metrics = [{'classifier_head' : 'accuracy', 'regressor_head' : 'mse' }]
+    h.metrics = [{'yolo_output_0' : 'accuracy', 'yolo_output_1' : 'accuracy', 'yolo_output_2' : 'mse' }]
 
     # loss
-    h.loss = [{'classifier_head' : 'categorical_crossentropy', 'regressor_head' : 'mse' }] 
+    h.loss = [{'yolo_output_0' : 'binary_crossentropy', 'yolo_output_1' : 'categorical_crossentropy', 'yolo_output_2' : 'mse' }] 
 
     return h
 
@@ -217,7 +218,7 @@ def default_configs():
 page_model_param_dict = {
     'military_aircraft':
         dict(
-            image_size = 460,
+            image_size = 448,
             num_epochs = 1,
             pretrained = False,
             learning_rate = 0.000001,
@@ -228,7 +229,7 @@ page_model_param_dict = {
             data_annotation_path = 'dataset/Annotations/Horizontal Bounding Boxes/',
             train_img_path = 'dataset/JPEGImages/',
             test_img_path = 'dataset/JPEGImages/',
-            batch_size = 64,
+            batch_size = 16,
         )
 }
 

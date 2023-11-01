@@ -176,7 +176,7 @@ def prepare_data_train(h_parameters):
         y_train_detection.append(bboxes)
         y_train_obj_exist.append(obj_exist)
 
-    return X_train, y_train_classification, y_train_detection, y_train_obj_exist
+    return X_train, y_train_obj_exist, y_train_classification, y_train_detection
 
 
 def prepare_data_test(h_parameters):
@@ -256,18 +256,18 @@ def prepare_data_test(h_parameters):
         y_test_detection.append(bboxes)
         y_test_obj_exist.append(obj_exist)
 
-    return X_test, y_test_classification, y_test_detection, y_test_obj_exist
+    return X_test, y_test_obj_exist, y_test_classification, y_test_detection, 
 
 
 if __name__ == '__main__':
     h_parameters = parameters.get_config()
-    xtrain, ytrain_classification, ytrain_detection, ytrain_obj_existens = prepare_data_train(h_parameters)
+    xtrain, ytrain_obj_existens, ytrain_classification, ytrain_detection = prepare_data_train(h_parameters)
     # print('xtrain -- ',xtrain)
     # print('ytrain classification -- ', ytrain_classification)
     # print('ytrain detection -- ', ytrain_detection)
     # print('ytrain obj existens -- ', ytrain_obj_existens)
 
-    xtest, ytest_classification, ytest_detection, ytest_obj_existens = prepare_data_test(h_parameters)
+    xtest, ytest_obj_existens, ytest_classification, ytest_detection = prepare_data_test(h_parameters)
     # print('xtest -- ',xtest)
     # print('ytest classification -- ', ytest_classification)
     # print('ytest detection -- ', ytest_detection)

@@ -8,7 +8,7 @@ from itertools import repeat
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Conv2D, Dropout, Dense, Flatten, MaxPooling2D, UpSampling2D, ZeroPadding2D, LeakyReLU, Add, Concatenate, Lambda, Input
+from tensorflow.keras.layers import Conv2D, Dropout, Dense, Flatten, MaxPooling2D, UpSampling2D, ZeroPadding2D, LeakyReLU, Add, Concatenate, Lambda, Input, Softmax
 from tensorflow.keras.regularizers import l2
 
  
@@ -45,15 +45,6 @@ class bbox_ai():
         else:
             # Create the model.
             print('Creating model...')
-            # inputs = tf.keras.layers.Input(shape=self.input_size)
-                    
-            # x = inputs = Input([None, None, 3])
-            # x = self.DarknetConv(x, 32, 3)
-            # x = self.DarknetBlock(x, 64, 1)
-            # x = self.DarknetBlock(x, 128, 2)
-            # x = x_36 = self.DarknetBlock(x, 256, 8)
-            # x = x_61 = self.DarknetBlock(x, 512, 8)
-            # x = self.DarknetBlock(x, 1024, 4)
 
             self.model = self.yolo_v3(self.h.image_size, self.h.objects_number, self.h.num_classes, self.h.bbox_number)
 
@@ -90,13 +81,13 @@ class bbox_ai():
         return x
     
     def darknet(self, name=None):
-        x = inputs = Input([None, None, 3])
-        x = self.backbone_conv(x, 32, 3)
-        x = self.backbone_block(x, 64, 1)
-        x = self.backbone_block(x, 128, 2)
-        x = x_36 = self.backbone_block(x, 256, 8)
-        x = x_61 = self.backbone_block(x, 512, 8)
-        x = self.backbone_block(x, 1024, 4)
+        x = inputs = Input([self.h.image_size, self.h.image_size, self.h.input_channels])
+        x = self.backbone_conv(x, 16, 3)
+        x = self.backbone_block(x, 32, 1)
+        x = self.backbone_block(x, 64, 2)
+        x = x_36 = self.backbone_block(x, 128, 4)
+        x = x_61 = self.backbone_block(x, 256, 4)
+        x = self.backbone_block(x, 512, 2)
         return tf.keras.Model(inputs, (x_36, x_61, x), name=name)
     
     def yolo_conv(self, filters, name=None):
@@ -119,58 +110,62 @@ class bbox_ai():
             return Model(inputs, x, name=name)(x_in)
         return yolo_conv
 
-    def yolo_output(self, filters, classes, name=None):
+    def yolo_output(self, filters, classes, name=None, softmax_activation=False):
         def yolo_output(x_in):
             x = inputs = Input(x_in.shape[1:])
             x = self.backbone_conv(x, filters * 2, 3)
             x = self.backbone_conv(x, classes, 1, batch_norm=False)
-            x = Lambda(lambda x: tf.reshape(x, (-1, tf.shape(x)[1], tf.shape(x)[2], classes)))(x)
+            x = Dense(filters*2)(x)
+            x = Dense(self.h.grid_partition*self.h.grid_partition*classes)(x)
+            x = Lambda(lambda x: tf.reshape(x, (-1, self.h.grid_partition, self.h.grid_partition, classes)))(x)
+            if softmax_activation:
+                x = Softmax(axis=-1)(x)
             return tf.keras.Model(inputs, x, name=name)(x_in)
         return yolo_output
     
-    def yolo_v3(self, size, objects_classes, classification_classes, bbox_classes, channels=3):
-            x = inputs = Input([size, size, channels])
+    def yolo_v3(self, size, objects_classes, classification_classes, bbox_classes):
+            x = inputs = Input([size, size, self.h.input_channels])
 
             x_36, x_61, x = self.darknet(name='yolo_darknet')(x)
 
-            x = self.yolo_conv(512, name='yolo_conv_0')(x)
-            output_0 = self.yolo_output(512, objects_classes, name='yolo_output_0')(x)
+            x = self.yolo_conv(256, name='yolo_conv_0')(x)
+            output_0 = self.yolo_output(512, objects_classes, name='yolo_output_0', softmax_activation=True)(x)
 
-            x = self.yolo_conv(256, name='yolo_conv_1')((x, x_61))
-            output_1 = self.yolo_output(256, classification_classes*objects_classes, name='yolo_output_1')(x)
+            x = self.yolo_conv(128, name='yolo_conv_1')((x, x_61))
+            output_1 = self.yolo_output(256, classification_classes*objects_classes, name='yolo_output_1', softmax_activation=True)(x)         
 
-            x = self.yolo_conv(128, name='yolo_conv_2')((x, x_36))
+            x = self.yolo_conv(64, name='yolo_conv_2')((x, x_36))
             output_2 = self.yolo_output(128, bbox_classes*objects_classes, name='yolo_output_2')(x)
 
             return Model(inputs, (output_0, output_1, output_2), name='yolov3')
 
 
-    def build_feature_extractor(self, inputs):
+    # def build_feature_extractor(self, inputs):
 
-        x = tf.keras.layers.Conv2D(16, kernel_size=3, activation='relu', input_shape=self.input_size)(inputs)
-        x = tf.keras.layers.AveragePooling2D(2,2)(x)
+    #     x = tf.keras.layers.Conv2D(16, kernel_size=3, activation='relu', input_shape=self.input_size)(inputs)
+    #     x = tf.keras.layers.AveragePooling2D(2,2)(x)
 
-        x = tf.keras.layers.Conv2D(32, kernel_size=3, activation = 'relu')(x)
-        x = tf.keras.layers.AveragePooling2D(2,2)(x)
+    #     x = tf.keras.layers.Conv2D(32, kernel_size=3, activation = 'relu')(x)
+    #     x = tf.keras.layers.AveragePooling2D(2,2)(x)
 
-        x = tf.keras.layers.Conv2D(64, kernel_size=3, activation = 'relu')(x)
-        x = tf.keras.layers.AveragePooling2D(2,2)(x)
+    #     x = tf.keras.layers.Conv2D(64, kernel_size=3, activation = 'relu')(x)
+    #     x = tf.keras.layers.AveragePooling2D(2,2)(x)
 
-        return x
+    #     return x
 
-    def build_model_adaptor(self, inputs):
-        x = tf.keras.layers.Flatten()(inputs)
-        x = tf.keras.layers.Dense(64, activation='relu')(x)
-        return x
+    # def build_model_adaptor(self, inputs):
+    #     x = tf.keras.layers.Flatten()(inputs)
+    #     x = tf.keras.layers.Dense(64, activation='relu')(x)
+    #     return x
 
-    def build_classifier_head(self, inputs):
-        x = tf.keras.layers.Dense(self.h.num_classes*self.h.grid_partition*self.h.grid_partition)(inputs)
-        x = tf.keras.layers.Reshape((self.h.grid_partition, self.h.grid_partition, self.h.num_classes))(x)
-        return tf.keras.layers.Softmax(name = 'classifier_head')(x)
+    # def build_classifier_head(self, inputs):
+    #     x = tf.keras.layers.Dense(self.h.num_classes*self.h.grid_partition*self.h.grid_partition)(inputs)
+    #     x = tf.keras.layers.Reshape((self.h.grid_partition, self.h.grid_partition, self.h.num_classes))(x)
+    #     return tf.keras.layers.Softmax(name = 'classifier_head')(x)
 
-    def build_regressor_head(self, inputs):
-        x = tf.keras.layers.Dense(self.h.bbox_number*self.h.grid_partition*self.h.grid_partition, activation='relu')(inputs)
-        return tf.keras.layers.Reshape((self.h.grid_partition, self.h.grid_partition, self.h.bbox_number), name = 'regressor_head')(x)
+    # def build_regressor_head(self, inputs):
+    #     x = tf.keras.layers.Dense(self.h.bbox_number*self.h.grid_partition*self.h.grid_partition, activation='relu')(inputs)
+    #     return tf.keras.layers.Reshape((self.h.grid_partition, self.h.grid_partition, self.h.bbox_number), name = 'regressor_head')(x)
 
     def train(self):
         """
@@ -185,6 +180,7 @@ class bbox_ai():
 
         # Load the training and test data.
         X_train, y_train, X_test, y_test = data_loader.loading_data(self.h)
+        print('y train - ', y_train)
 
         # Compile the model.
         self.model.compile(optimizer=self.h.optimizer, loss=self.h.loss[0], metrics=self.h.metrics[0])
