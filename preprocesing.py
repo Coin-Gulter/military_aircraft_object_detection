@@ -10,89 +10,121 @@ import keras.utils as utils
 
 
 class preprocesing():
-    """
-    Class for preprocessing the data.
-
-    Args:
-        h_parameters (dict): Hyperparameters of the model.
-    """
 
     def __init__(self, h_parameters):
+        # Constructor for the preprocessing class, responsible for data preparation.
         self.h = h_parameters
 
-        # Get the paths to the training and test images.
+        # Read the list of training file names from a text file.
         with open(self.h.train_file, mode='r') as tr_fl:
             files_name = tr_fl.readlines()
 
+        # Parse the XML files corresponding to the training data.
         self.tr_files_tree = [et.parse(self.h.data_annotation_path + re.sub('\n','',elem) +'.xml') for elem in files_name]
 
+
+        # Limit the number of training images if specified in the hyperparameters.
         if self.h.number_train_images < len(self.tr_files_tree):
             self.tr_files_tree = self.tr_files_tree[:self.h.number_train_images]
 
+        # Shuffle the list of training data for randomness.
         random.shuffle(self.tr_files_tree)
 
+        # Extract the root elements of the parsed XML files.
         self.tr_roots = [tree.getroot() for tree in self.tr_files_tree]
+
+        # Extract training file names and build their file paths.
         self.train_files = [root.find('filename').text for root in self.tr_roots]
         self.train_file_path = [self.h.train_img_path+file_name for file_name in self.train_files]
         self.train_file_path = list(map(self.file_jpg_filter, self.train_file_path))
 
 
         if self.h.with_test:
+            # If testing is enabled, repeat the same process for test data.
 
+            # Read the list of test file names from a text file.
             with open(self.h.test_file, mode='r') as ts_fl:
                 files_name = ts_fl.readlines()
 
+            # Parse the XML files corresponding to the test data.
             self.ts_files_tree = [et.parse(self.h.data_annotation_path + re.sub('\n','',elem) +'.xml') for elem in files_name]
 
+            # Limit the number of test images if specified in the hyperparameters.
             if self.h.number_test_images < len(self.ts_files_tree):
                 self.ts_files_tree = self.ts_files_tree[:self.h.number_test_images]
 
+            # Shuffle the list of test data for randomness.
             random.shuffle(self.ts_files_tree)
 
+            # Extract the root elements of the parsed XML files.
             self.ts_roots = [tree.getroot() for tree in self.ts_files_tree]
+            # Extract test file names and build their file paths.
             self.test_files = [root.find('filename').text for root in self.ts_roots]
             self.test_file_path = [self.h.test_img_path+file_path for file_path in self.test_files]
             self.test_file_path = list(map(self.file_jpg_filter, self.test_file_path))
 
     def file_jpg_filter(self, filename):
+        # Function to ensure that file names have the '.jpg' extension.
+
+        # Check if the file name already has the '.jpg' extension.
         if re.search(r'\.[a-z]{3,4}$', filename).group(0) == '.jpg':
             filename = re.sub(' ', '', filename)
             return filename
         else:
+            # If not, replace the extension with '.jpg'.
             filename = re.sub(' ', '', filename)
             return re.sub(r'\.[a-z]{3,4}$', '.jpg', filename)
 
     def check_obj_grid_part(self, obj_bbox):
+        # Function to determine the grid part (cell) of an object's bounding box.
+
+        # Calculate the size of each grid cell.
         grid_size = self.h.image_size / self.h.grid_partition
         
+        # Calculate the grid cell in the x-direction.
         grid_x = int(obj_bbox[0] / grid_size)
 
+        # Ensure that the grid_x value is within bounds.
         if grid_x >= self.h.grid_partition:
             grid_x = self.h.grid_partition-1
 
+        # Calculate the grid cell in the y-direction.
         grid_y = int(obj_bbox[1] / grid_size)
 
+        # Ensure that the grid_y value is within bounds.
         if grid_y >= self.h.grid_partition:
             grid_y = self.h.grid_partition-1
 
         return (int(grid_x), int(grid_y))
 
     def format_bbox(self, bbox, ratio):
+        # Function to format a bounding box with respect to a given ratio.
         x, y, w, h = bbox[0], bbox[1], bbox[2], bbox[3]
-        # box = [int((x - 0.5*w)* width / r), int((y - 0.5*h) * height / r), int(w*width / r), int(h*height / r)]
+        # Calculate the new bounding box coordinates and dimensions.
         box = [int(x / ratio), int(y / ratio), int(w / ratio), int(h / ratio)]
+        # Convert the bounding box into YOLO format (center x, center y, width, height).
         new_bbox = np.array([(box[0]+box[2]/2), (box[1]+box[3]/2), (box[2]/2), (box[3]/2)])
         return new_bbox
 
     def format_image(self, img):
+        # Function to resize and format an input image to a specified image size.
+
+        # Get the height and width of the input image.
         height, width, = img.shape 
+
+        # Calculate the maximum dimension (height or width).
         max_size = max(height, width)
+        # Calculate the ratio by which the image will be resized to fit the specified image size.
         ratio = max_size / self.h.image_size
+        # Calculate the new width and height after resizing.
         new_width = int(width / ratio)
         new_height = int(height / ratio)
+        # Create a new image of the specified size filled with zeros.
         new_size = (new_width, new_height)
         resized = cv.resize(img, new_size, interpolation= cv.INTER_LINEAR)
+        # Create a new image of the specified size filled with zeros.
         new_image = np.zeros((self.h.image_size, self.h.image_size), dtype=np.uint8)
+        # Create a new image of the specified size filled with zeros.
         new_image[0:new_height, 0:new_width] = resized
 
         return new_image, ratio
@@ -100,29 +132,27 @@ class preprocesing():
 
 
 def prepare_data_train(h_parameters):
-    """
-    Prepare the training data.
+    # Function to prepare training data.
 
-    Args:
-        h_parameters (dict): Hyperparameters of the model.
-
-    Returns:
-        X_train, y_train: Training data.
-    """
-
+    # Create a preprocessing object to handle data preparation.
     preprocess = preprocesing(h_parameters)
 
+    # Initialize lists to store training data and labels.
     X_train = []
     y_train_classification = []
     y_train_detection = []
     y_train_obj_exist = []
 
+
+    # Get the number of training images.
     length = len(preprocess.train_file_path)
     percentage = 0
     prev_time = time.time()
 
+    # Loop through training images and annotations.
     for index, img_path in enumerate(preprocess.train_file_path):
 
+        # Update progress percentage and estimated time remaining.
         if int((index*100)/length) != percentage:
             percentage = int((index*100)/length)
             eta = time.strftime("%H:%M:%S", time.gmtime((100 - percentage) * (time.time() - prev_time)))
@@ -131,16 +161,19 @@ def prepare_data_train(h_parameters):
 
             prev_time = time.time()
 
-        # Read the image and augment it.
+        # Read the image in grayscale.
         img = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
 
+        # Resize the image and calculate the resizing ratio.
         img, ratio = preprocess.format_image(img)
         X_train.append(img)
 
+        # Initialize arrays for bounding boxes, labels, and object existence.
         bboxes = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.bbox_number*h_parameters.objects_number))
         labels = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.num_classes*h_parameters.objects_number))
-        obj_exist = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.objects_number))
+        obj_exist = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.objects_number+1))
 
+        # Initialize an array to keep track of the number of objects in each grid cell.
         objects_numbers = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition))
         
         for obj in preprocess.tr_roots[index].findall('object'):
@@ -167,7 +200,7 @@ def prepare_data_train(h_parameters):
 
             bboxes[grid_x, grid_y, start_bbox_point:end_bbox_point] = bbox
             labels[grid_x, grid_y, start_label_point:end_label_point] = label
-            obj_exist[grid_x, grid_y, obj_num] = 1
+            obj_exist[grid_x, grid_y, obj_num + 1] = 1
 
             if obj_num < (h_parameters.objects_number-1):
                 objects_numbers[grid_x, grid_y] += 1
@@ -180,16 +213,6 @@ def prepare_data_train(h_parameters):
 
 
 def prepare_data_test(h_parameters):
-    """
-    Prepare the test data.
-
-    Args:
-        h_parameters (dict): Hyperparameters of the model.
-
-    Returns:
-        X_test, y_test: Test data.
-    """
-
     preprocess = preprocesing(h_parameters)
 
     X_test = []
@@ -211,7 +234,6 @@ def prepare_data_test(h_parameters):
 
             prev_time = time.time()
 
-        # Read the image and augment it.
         img = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
 
         img, ratio = preprocess.format_image(img)

@@ -6,33 +6,30 @@ import utils
 import parameters
 from itertools import repeat
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Conv2D, Dropout, Dense, Flatten, MaxPooling2D, UpSampling2D, ZeroPadding2D, LeakyReLU, Add, Concatenate, Lambda, Input, Softmax
+from tensorflow.keras.layers import Conv2D, Dropout, Dense, Flatten, UpSampling2D, ZeroPadding2D, LeakyReLU, Add, Concatenate, Input, Softmax, Activation, Reshape
 from tensorflow.keras.regularizers import l2
 
  
 class BatchNormalization(tf.keras.layers.BatchNormalization):
+    """A custom BatchNormalization layer that can be used in inference mode without updating the moving mean and moving variance."""
     def call(self, x, training=False):
+        """Computes the output of the layer.
+
+        Args:
+            x: The input tensor.
+            training: A Boolean value indicating whether the layer is in training mode.
+
+        Returns:
+            The output tensor.
+        """
         if training is None: training = tf.constant(False)
         training = tf.logical_and(training, self.trainable)
         return super().call(x, training)
 
 class bbox_ai():
-    """
-    Class for the page_ai model.
-
-    Args:
-        h_parameters (dict): Hyperparameters for the model.
-    """
 
     def __init__(self, h_parameters):
-        """
-        Constructor for the page_ai class.
-
-        Args:
-            h_parameters (dict): Hyperparameters for the model.
-        """
 
         self.h = h_parameters
         self.input_size = (self.h.image_size, self.h.image_size, 1)
@@ -48,13 +45,13 @@ class bbox_ai():
 
             self.model = self.yolo_v3(self.h.image_size, self.h.objects_number, self.h.num_classes, self.h.bbox_number)
 
-            # self.model = tf.keras.Model(inputs = inputs, outputs = [classification_head, regressor_head])
             print('Model created')
 
         # Summarize the model.
         self.model.summary()
 
     def backbone_conv(self, x, filters, size, strides=1, batch_norm=True):
+        # Helper function for convolutional layers in the backbone.
         if strides == 1:
             padding = 'same'
         else:
@@ -68,6 +65,7 @@ class bbox_ai():
         return x
     
     def backbone_res(self, x, filters):
+        # Helper function for residual blocks in the backbone.
         previous = x
         x = self.backbone_conv(x, filters, 2, 1)
         x = self.backbone_conv(x, filters, 3)
@@ -75,12 +73,14 @@ class bbox_ai():
         return x
     
     def backbone_block(self, x, filters, blocks):
+        # Helper function for creating a block of layers in the backbone.
         x = self.backbone_conv(x, filters, 3, strides=2)
         for _ in repeat(None, blocks):
             x = self.backbone_res(x, filters)
         return x
     
     def darknet(self, name=None):
+        # Definition of the Darknet architecture, a backbone network.
         x = inputs = Input([self.h.image_size, self.h.image_size, self.h.input_channels])
         x = self.backbone_conv(x, 16, 3)
         x = self.backbone_block(x, 32, 1)
@@ -91,6 +91,7 @@ class bbox_ai():
         return tf.keras.Model(inputs, (x_36, x_61, x), name=name)
     
     def yolo_conv(self, filters, name=None):
+        # YOLO convolutional layer with skip connections.
         def yolo_conv(x_in):
             if isinstance(x_in, tuple):
                 inputs = Input(x_in[0].shape[1:]), Input(x_in[1].shape[1:])
@@ -110,77 +111,47 @@ class bbox_ai():
             return Model(inputs, x, name=name)(x_in)
         return yolo_conv
 
-    def yolo_output(self, filters, classes, name=None, softmax_activation=False):
+    def yolo_output(self, filters, classes, name=None, softmax_activation=False, sigmoid_activation=False):
+        # YOLO output layer for object detection.
         def yolo_output(x_in):
             x = inputs = Input(x_in.shape[1:])
             x = self.backbone_conv(x, filters * 2, 3)
             x = self.backbone_conv(x, classes, 1, batch_norm=False)
+            x = Flatten()(x)
             x = Dense(filters*2)(x)
+            x = Dropout(0.3)(x)
             x = Dense(self.h.grid_partition*self.h.grid_partition*classes)(x)
-            x = Lambda(lambda x: tf.reshape(x, (-1, self.h.grid_partition, self.h.grid_partition, classes)))(x)
+            x = Reshape((self.h.grid_partition, self.h.grid_partition, classes))(x)
             if softmax_activation:
-                x = Softmax(axis=-1)(x)
+                x = Softmax()(x)
+            elif sigmoid_activation:
+                x = Activation(activation='sigmoid')(x)
             return tf.keras.Model(inputs, x, name=name)(x_in)
         return yolo_output
     
     def yolo_v3(self, size, objects_classes, classification_classes, bbox_classes):
+        # YOLOv3 model architecture combining the backbone and output layers.
             x = inputs = Input([size, size, self.h.input_channels])
 
             x_36, x_61, x = self.darknet(name='yolo_darknet')(x)
 
             x = self.yolo_conv(256, name='yolo_conv_0')(x)
-            output_0 = self.yolo_output(512, objects_classes, name='yolo_output_0', softmax_activation=True)(x)
+            obj_exist_out = self.yolo_output(512, objects_classes+1, name='obj_exist', sigmoid_activation=True)(x)
 
             x = self.yolo_conv(128, name='yolo_conv_1')((x, x_61))
-            output_1 = self.yolo_output(256, classification_classes*objects_classes, name='yolo_output_1', softmax_activation=True)(x)         
+            obj_class_out = self.yolo_output(256, classification_classes*objects_classes, name='obj_classification', softmax_activation=True)(x)         
 
             x = self.yolo_conv(64, name='yolo_conv_2')((x, x_36))
-            output_2 = self.yolo_output(128, bbox_classes*objects_classes, name='yolo_output_2')(x)
+            obj_detect_out = self.yolo_output(128, bbox_classes*objects_classes, name='obj_detection')(x)
 
-            return Model(inputs, (output_0, output_1, output_2), name='yolov3')
-
-
-    # def build_feature_extractor(self, inputs):
-
-    #     x = tf.keras.layers.Conv2D(16, kernel_size=3, activation='relu', input_shape=self.input_size)(inputs)
-    #     x = tf.keras.layers.AveragePooling2D(2,2)(x)
-
-    #     x = tf.keras.layers.Conv2D(32, kernel_size=3, activation = 'relu')(x)
-    #     x = tf.keras.layers.AveragePooling2D(2,2)(x)
-
-    #     x = tf.keras.layers.Conv2D(64, kernel_size=3, activation = 'relu')(x)
-    #     x = tf.keras.layers.AveragePooling2D(2,2)(x)
-
-    #     return x
-
-    # def build_model_adaptor(self, inputs):
-    #     x = tf.keras.layers.Flatten()(inputs)
-    #     x = tf.keras.layers.Dense(64, activation='relu')(x)
-    #     return x
-
-    # def build_classifier_head(self, inputs):
-    #     x = tf.keras.layers.Dense(self.h.num_classes*self.h.grid_partition*self.h.grid_partition)(inputs)
-    #     x = tf.keras.layers.Reshape((self.h.grid_partition, self.h.grid_partition, self.h.num_classes))(x)
-    #     return tf.keras.layers.Softmax(name = 'classifier_head')(x)
-
-    # def build_regressor_head(self, inputs):
-    #     x = tf.keras.layers.Dense(self.h.bbox_number*self.h.grid_partition*self.h.grid_partition, activation='relu')(inputs)
-    #     return tf.keras.layers.Reshape((self.h.grid_partition, self.h.grid_partition, self.h.bbox_number), name = 'regressor_head')(x)
+            return Model(inputs, (obj_exist_out, obj_class_out, obj_detect_out), name='yolov3')
 
     def train(self):
-        """
-        Function to train the page_ai model.
-
-        Args:
-            None.
-
-        Returns:
-            None.
-        """
+        # Method to train the model.
 
         # Load the training and test data.
         X_train, y_train, X_test, y_test = data_loader.loading_data(self.h)
-        print('y train - ', y_train)
+        # print('y train - ', y_train)
 
         # Compile the model.
         self.model.compile(optimizer=self.h.optimizer, loss=self.h.loss[0], metrics=self.h.metrics[0])
@@ -194,10 +165,12 @@ class bbox_ai():
 
         # Evaluate the model on the test set.
         if self.h.with_test:
-            test_loss, test_class_loss, test_detect_loss, test_class_acc, test_detect_mse  = self.model.evaluate(X_test, y_test)
+            test_loss, test_obj_loss, test_class_loss, test_detect_loss, test_obj_acc, test_class_acc, test_detect_mse = self.model.evaluate(X_test, y_test)
             print('test loss -- ', test_loss)
+            print('Tested objects loss:', test_obj_loss)
             print('Tested classification loss:', test_class_loss)
             print('Tested detect loss:', test_detect_loss)
+            print('Tested objects accuracy:', test_obj_acc)
             print('Tested classification accuracy:', test_class_acc)
             print('Tested detect mse:', test_detect_mse)
 
@@ -206,15 +179,7 @@ class bbox_ai():
     
 
     def predict(self, img:np.ndarray):
-        """
-        Function to predict the rotation of an image.
-
-        Args:
-            img (np.ndarray): Image to be predicted.
-
-        Returns:
-            int: Predicted rotation angle.
-        """
+        # Method to make predictions on input images.
 
         # Check if the image is grayscale or RGB.
         if len(img.shape) < 3:

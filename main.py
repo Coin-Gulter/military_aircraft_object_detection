@@ -6,15 +6,7 @@ import cv2 as cv
 import numpy as np
 
 def main():
-    """
-    Main function of the program.
 
-    Args: 
-        None.
-
-    Returns:
-        None.
-    """
     # If training, then train the model.
     h_parameters = parameters.get_config()
     bbox_ai = model.bbox_ai(h_parameters)
@@ -26,14 +18,15 @@ def main():
     img = cv.imread('43.jpg', cv.IMREAD_GRAYSCALE)
     formated_img = utils.format_image(img, h_parameters.image_size)
     result = bbox_ai.predict(img)
-    classification = result[0]
-    detecting = result[1]
-    for x, row in enumerate(classification[0]):
+    objects = result[0]
+    classification = result[1]
+    detecting = result[2]
+    for x, row in enumerate(objects[0]):
         for y, classes in enumerate(row):
-            index = np.argmax(classes)
-            if index != 0 and classes[index] > 0.5:
-
-                class_name = utils.get_key_from_dict(h_parameters.image_classes[0], index)
+            index_obj = np.argmax(classes)
+            if index_obj != 0 and classes[index_obj] > 0.5:
+                index_classification = np.argmax(classification[0][x][y])
+                class_name = utils.get_key_from_dict(h_parameters.image_classes[0], index_classification)
                 grid_size = h_parameters.image_size/h_parameters.grid_partition
                 formated_img_txt = cv.putText(formated_img, class_name, ((int(x*grid_size), int(y*grid_size))), cv.FONT_HERSHEY_SIMPLEX, 0.4, (0,255,0), 1)
 

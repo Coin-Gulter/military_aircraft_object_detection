@@ -5,6 +5,7 @@ venv/
 *.cfg
 *.jpg
 /model2.py
+/*.h5
 /*.keras
 test.py
 *.keras

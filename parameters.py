@@ -180,7 +180,7 @@ def default_configs():
     h.act_type = 'softmax'
 
     # input preprocessing parameters
-    h.image_size = 360  # An integer or a string WxH such as 360x360.
+    h.image_size = 448  # An integer or a string WxH such as 360x360.
     h.batch_size = 64
 
     h.image_classes = [{'A20':1,'A1':2,'A2':3,'A3':4,'A4':5,'A5':6,'A6':7,'A7':8,'A8':9,'A9':10,'A10':11,
@@ -192,7 +192,7 @@ def default_configs():
     h.objects_number = 1
     h.bbox_number = 4
     h.input_channels = 1
-    h.number_train_images = 500
+    h.number_train_images = 1000
     h.number_test_images = 100
     h.train_file = 'dataset/ImageSets/Main/train.txt'
     h.test_file = 'dataset/ImageSets/Main/test.txt'
@@ -206,11 +206,11 @@ def default_configs():
     h.optimizer = 'adam'  # can be 'adam' or 'sgd'.
     h.learning_rate = 0.001  # 0.008 for adam.
     h.lr_dropout = 0.3
-    h.num_epochs = 6
-    h.metrics = [{'yolo_output_0' : 'accuracy', 'yolo_output_1' : 'accuracy', 'yolo_output_2' : 'mse' }]
+    h.num_epochs = 10
+    h.metrics = [{'obj_exist' : 'accuracy', 'obj_classification' : 'accuracy', 'obj_detection' : 'mse' }]
 
     # loss
-    h.loss = [{'yolo_output_0' : 'binary_crossentropy', 'yolo_output_1' : 'categorical_crossentropy', 'yolo_output_2' : 'mse' }] 
+    h.loss = [{'obj_exist' : 'binary_crossentropy', 'obj_classification' : 'categorical_crossentropy', 'obj_detection' : 'mse' }] 
 
     return h
 
@@ -219,9 +219,9 @@ page_model_param_dict = {
     'military_aircraft':
         dict(
             image_size = 448,
-            num_epochs = 1,
+            num_epochs = 6,
             pretrained = False,
-            learning_rate = 0.000001,
+            learning_rate = 0.001,
             with_test = True,
             validation_split = 0.1,
             test_file = 'dataset/ImageSets/Main/test.txt',
@@ -229,7 +229,7 @@ page_model_param_dict = {
             data_annotation_path = 'dataset/Annotations/Horizontal Bounding Boxes/',
             train_img_path = 'dataset/JPEGImages/',
             test_img_path = 'dataset/JPEGImages/',
-            batch_size = 16,
+            batch_size = 32,
         )
 }
 

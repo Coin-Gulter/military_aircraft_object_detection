@@ -5,15 +5,6 @@ import numpy as np
 
 
 def loading_data(h_parameters):
-    """
-    Load the data from the disk and prepare it for training and testing.
-
-    Args:
-        h_parameters (dict): Hyperparameters of the model.
-
-    Returns:
-        X_train, y_train, X_test, y_test: Training and test data.
-    """
 
     print('Start data loader...')
 
@@ -86,7 +77,8 @@ def loading_data(h_parameters):
         y_test_detection = None
         y_test_obj_exist = None
 
-    return X_train, {'yolo_output_0' : y_train_obj_exist, 'yolo_output_1' : y_train_classification, 'yolo_output_2' : y_train_detection }, X_test, {'yolo_output_0' : y_test_obj_exist, 'yolo_output_1' : y_test_classification, 'yolo_output_2' : y_test_detection }
+    return X_train, {'obj_exist' : y_train_obj_exist, 'obj_classification' : y_train_classification, 'obj_detection' : y_train_detection },\
+            X_test, {'obj_exist' : y_test_obj_exist, 'obj_classification' : y_test_classification, 'obj_detection' : y_test_detection }
 
 
 if __name__ == "__main__":
