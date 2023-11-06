@@ -12,7 +12,7 @@ def loading_data(h_parameters):
     X_train, y_train_obj_exist, y_train_classification, y_train_detection = preprocesing.prepare_data_train(h_parameters)
 
     X_train = np.array(X_train)/255
-    X_train = np.reshape(X_train, (len(X_train), h_parameters.image_size, h_parameters.image_size, 1))
+    X_train = np.reshape(X_train, (len(X_train), h_parameters.image_size, h_parameters.image_size, h_parameters.input_channels))
   
     y_train_obj_exist = np.array(y_train_obj_exist, dtype=np.float16)
     y_train_classification = np.array(y_train_classification, dtype=np.float16)
@@ -45,7 +45,7 @@ def loading_data(h_parameters):
         X_test, y_test_obj_exist, y_test_classification, y_test_detection = preprocesing.prepare_data_test(h_parameters)
 
         X_test = np.array(X_test)/255
-        X_test = np.reshape(X_test, (len(X_test), h_parameters.image_size, h_parameters.image_size, 1))
+        X_test = np.reshape(X_test, (len(X_test), h_parameters.image_size, h_parameters.image_size,  h_parameters.input_channels))
     
         y_test_obj_exist = np.array(y_test_obj_exist, dtype=np.float16)
         y_test_classification = np.array(y_test_classification, dtype=np.float16)

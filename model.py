@@ -7,7 +7,7 @@ import parameters
 from itertools import repeat
 import tensorflow as tf
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Conv2D, Dropout, Dense, Flatten, UpSampling2D, ZeroPadding2D, LeakyReLU, Add, Concatenate, Input, Softmax, Activation, Reshape
+from tensorflow.keras.layers import Conv2D, Dropout, Dense, Flatten, UpSampling2D, ZeroPadding2D, LeakyReLU, Add, Concatenate, Input, Softmax, Activation, Reshape, MaxPooling2D
 from tensorflow.keras.regularizers import l2
 
  
@@ -58,7 +58,7 @@ class bbox_ai():
             x = ZeroPadding2D(((1, 0), (1, 0)))(x)
             padding = 'valid'
         x = Conv2D(filters=filters, kernel_size=size, strides=strides, padding=padding, 
-                   use_bias=not batch_norm, kernel_regularizer=l2(0.0005))(x)
+                   use_bias=not batch_norm, kernel_regularizer=l2(0.001))(x)
         if batch_norm:
             x = BatchNormalization()(x)
             x = LeakyReLU(alpha=0.1)(x)
@@ -105,30 +105,32 @@ class bbox_ai():
 
             x = self.backbone_conv(x, filters, 1)
             x = self.backbone_conv(x, filters * 2, 3)
+            x = Dropout(rate=self.h.lr_dropout)(x)
             x = self.backbone_conv(x, filters, 1)
             x = self.backbone_conv(x, filters * 2, 3)
             x = self.backbone_conv(x, filters, 1)
+            x = Dropout(rate=self.h.lr_dropout)(x)
             return Model(inputs, x, name=name)(x_in)
         return yolo_conv
 
-    def yolo_output(self, filters, classes, name=None, softmax_activation=False, sigmoid_activation=False):
+    def yolo_output(self, filters, classes, name=None, max_pool_number=0, softmax_activation=False, sigmoid_activation=False):
         # YOLO output layer for object detection.
         def yolo_output(x_in):
             x = inputs = Input(x_in.shape[1:])
             x = self.backbone_conv(x, filters * 2, 3)
             x = self.backbone_conv(x, classes, 1, batch_norm=False)
-            x = Flatten()(x)
-            x = Dense(filters*2)(x)
-            x = Dropout(0.3)(x)
-            x = Dense(self.h.grid_partition*self.h.grid_partition*classes)(x)
-            x = Reshape((self.h.grid_partition, self.h.grid_partition, classes))(x)
+
+            if max_pool_number > 0:
+                x = MaxPooling2D(pool_size=(2*max_pool_number, 2*max_pool_number))(x)
+
             if softmax_activation:
                 x = Softmax()(x)
             elif sigmoid_activation:
                 x = Activation(activation='sigmoid')(x)
+
             return tf.keras.Model(inputs, x, name=name)(x_in)
         return yolo_output
-    
+
     def yolo_v3(self, size, objects_classes, classification_classes, bbox_classes):
         # YOLOv3 model architecture combining the backbone and output layers.
             x = inputs = Input([size, size, self.h.input_channels])
@@ -139,15 +141,19 @@ class bbox_ai():
             obj_exist_out = self.yolo_output(512, objects_classes+1, name='obj_exist', sigmoid_activation=True)(x)
 
             x = self.yolo_conv(128, name='yolo_conv_1')((x, x_61))
-            obj_class_out = self.yolo_output(256, classification_classes*objects_classes, name='obj_classification', softmax_activation=True)(x)         
+            obj_class_out = self.yolo_output(256, classification_classes*objects_classes, name='obj_classification', max_pool_number=1, softmax_activation=True)(x)         
 
             x = self.yolo_conv(64, name='yolo_conv_2')((x, x_36))
-            obj_detect_out = self.yolo_output(128, bbox_classes*objects_classes, name='obj_detection')(x)
+            obj_detect_out = self.yolo_output(128, bbox_classes*objects_classes, max_pool_number=2, name='obj_detection')(x)
 
             return Model(inputs, (obj_exist_out, obj_class_out, obj_detect_out), name='yolov3')
 
     def train(self):
         # Method to train the model.
+
+        # Get model output shapes
+        obj_exist_shape = self.model.get_layer('obj_exist').output
+        self.h.grid_partition = obj_exist_shape.shape[1]
 
         # Load the training and test data.
         X_train, y_train, X_test, y_test = data_loader.loading_data(self.h)
@@ -181,24 +187,13 @@ class bbox_ai():
     def predict(self, img:np.ndarray):
         # Method to make predictions on input images.
 
-        # Check if the image is grayscale or RGB.
-        if len(img.shape) < 3:
-            pass
-        elif len(img.shape) == 3:
-            img = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-        else:
-            raise Exception(f'Given image not in correct format - {img.shape} , \
-                                try using image of shape (x, y, 1) for grayscale or (x, y, 3) if image colorful')
-
-
-        # Resize the image.
-        resized_image = utils.format_image(img, self.h.image_size)
+        formated_img = utils.format_image(img, self.h.image_size, self.h.input_channels)
 
         # Normalize the image.
-        binary_image = resized_image.astype('float32') / 255
+        binary_image = formated_img.astype('float32') / 255
 
         # Reshape the image.
-        reshape_image = binary_image.reshape((1, self.h.image_size, self.h.image_size, 1))
+        reshape_image = binary_image.reshape((1, self.h.image_size, self.h.image_size, self.h.input_channels))
 
         # Make the prediction.
         result = self.model.predict(reshape_image)

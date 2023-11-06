@@ -191,9 +191,9 @@ def default_configs():
     h.grid_partition = 10
     h.objects_number = 1
     h.bbox_number = 4
-    h.input_channels = 1
+    h.input_channels = 3
     h.number_train_images = 1000
-    h.number_test_images = 100
+    h.number_test_images = 300
     h.train_file = 'dataset/ImageSets/Main/train.txt'
     h.test_file = 'dataset/ImageSets/Main/test.txt'
     h.data_annotation_path = 'dataset/Annotations/Horizontal Bounding Boxes/'
@@ -204,8 +204,8 @@ def default_configs():
 
     # optimization
     h.optimizer = 'adam'  # can be 'adam' or 'sgd'.
-    h.learning_rate = 0.001  # 0.008 for adam.
-    h.lr_dropout = 0.3
+    h.learning_rate = 0.0001  # 0.008 for adam.
+    h.lr_dropout = 0.4
     h.num_epochs = 10
     h.metrics = [{'obj_exist' : 'accuracy', 'obj_classification' : 'accuracy', 'obj_detection' : 'mse' }]
 
@@ -219,9 +219,9 @@ page_model_param_dict = {
     'military_aircraft':
         dict(
             image_size = 448,
-            num_epochs = 6,
+            num_epochs = 2,
             pretrained = False,
-            learning_rate = 0.001,
+            learning_rate = 0.00005,
             with_test = True,
             validation_split = 0.1,
             test_file = 'dataset/ImageSets/Main/test.txt',
@@ -229,7 +229,7 @@ page_model_param_dict = {
             data_annotation_path = 'dataset/Annotations/Horizontal Bounding Boxes/',
             train_img_path = 'dataset/JPEGImages/',
             test_img_path = 'dataset/JPEGImages/',
-            batch_size = 32,
+            batch_size = 18,
         )
 }
 

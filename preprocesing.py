@@ -110,7 +110,7 @@ class preprocesing():
         # Function to resize and format an input image to a specified image size.
 
         # Get the height and width of the input image.
-        height, width, = img.shape 
+        height, width, = img.shape[:2]
 
         # Calculate the maximum dimension (height or width).
         max_size = max(height, width)
@@ -123,12 +123,172 @@ class preprocesing():
         new_size = (new_width, new_height)
         resized = cv.resize(img, new_size, interpolation= cv.INTER_LINEAR)
         # Create a new image of the specified size filled with zeros.
-        new_image = np.zeros((self.h.image_size, self.h.image_size), dtype=np.uint8)
+        new_image = np.zeros((self.h.image_size, self.h.image_size, self.h.input_channels), dtype=np.uint8)
         # Create a new image of the specified size filled with zeros.
-        new_image[0:new_height, 0:new_width] = resized
+        new_image[0:new_height, 0:new_width, 0:self.h.input_channels] = resized
 
         return new_image, ratio
 
+
+def prepare_data_train_2(h_parameters):
+    # Function to prepare training data.
+
+    # Create a preprocessing object to handle data preparation.
+    preprocess = preprocesing(h_parameters)
+
+    # Initialize lists to store training data and labels.
+    X_train = []
+    y_train_classification = []
+    y_train_detection = []
+    y_train_obj_exist = []
+
+
+    # Get the number of training images.
+    length = len(preprocess.train_file_path)
+    percentage = 0
+    prev_time = time.time()
+
+    # Loop through training images and annotations.
+    for index, img_path in enumerate(preprocess.train_file_path):
+
+        # Update progress percentage and estimated time remaining.
+        if int((index*100)/length) != percentage:
+            percentage = int((index*100)/length)
+            eta = time.strftime("%H:%M:%S", time.gmtime((100 - percentage) * (time.time() - prev_time)))
+
+            print(f'Percentage of generated train images = {percentage}% -- ETA = {eta}')
+
+            prev_time = time.time()
+
+        if h_parameters.input_channels == 3:
+            # Read the image in color.
+            img = cv.imread(img_path, cv.IMREAD_COLOR)
+        elif h_parameters.input_channels == 1:
+            # Read the image in grayscale.
+            img = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
+
+        # Resize the image and calculate the resizing ratio.
+        img, ratio = preprocess.format_image(img)
+        X_train.append(img)
+
+        # Initialize arrays for bounding boxes, labels, and object existence.
+        bboxes = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.bbox_number*h_parameters.objects_number))
+        labels = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.objects_number))
+        obj_exist = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, 1))
+
+        # Initialize an array to keep track of the number of objects in each grid cell.
+        objects_numbers = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition))
+        
+        for obj in preprocess.tr_roots[index].findall('object'):
+
+            label = preprocess.h.image_classes[0][obj.find('name').text]
+            
+            xmin = int(obj.find('bndbox/xmin').text)
+            ymin = int(obj.find('bndbox/ymin').text)
+            xmax = int(obj.find('bndbox/xmax').text)
+            ymax = int(obj.find('bndbox/ymax').text)
+            w, h = (xmax-xmin),(ymax-ymin)
+            bbox =  preprocess.format_bbox([xmin, ymin, w, h], ratio)
+
+            grid_x, grid_y = preprocess.check_obj_grid_part(bbox)
+
+            obj_num = int(objects_numbers[grid_x, grid_y])
+
+            start_bbox_point =  int(h_parameters.bbox_number*obj_num)
+            end_bbox_point = start_bbox_point + h_parameters.bbox_number
+
+            bboxes[grid_x, grid_y, start_bbox_point:end_bbox_point] = bbox
+            labels[grid_x, grid_y, obj_num] = label
+            obj_exist[grid_x, grid_y, 0] = obj_num
+
+            if obj_num < (h_parameters.objects_number-1):
+                objects_numbers[grid_x, grid_y] += 1
+
+        y_train_classification.append(labels)
+        y_train_detection.append(bboxes)
+        y_train_obj_exist.append(obj_exist)
+
+    return X_train, y_train_obj_exist, y_train_classification, y_train_detection
+
+def prepare_data_test_2(h_parameters):
+    # Function to prepare training data.
+
+    # Create a preprocessing object to handle data preparation.
+    preprocess = preprocesing(h_parameters)
+
+    # Initialize lists to store training data and labels.
+    X_test = []
+    y_test_classification = []
+    y_test_detection = []
+    y_test_obj_exist = []
+
+
+    # Get the number of training images.
+    length = len(preprocess.test_file_path)
+    percentage = 0
+    prev_time = time.time()
+
+    # Loop through training images and annotations.
+    for index, img_path in enumerate(preprocess.test_file_path):
+
+        # Update progress percentage and estimated time remaining.
+        if int((index*100)/length) != percentage:
+            percentage = int((index*100)/length)
+            eta = time.strftime("%H:%M:%S", time.gmtime((100 - percentage) * (time.time() - prev_time)))
+
+            print(f'Percentage of generated test images = {percentage}% -- ETA = {eta}')
+
+            prev_time = time.time()
+
+        if h_parameters.input_channels == 3:
+            # Read the image in color.
+            img = cv.imread(img_path, cv.IMREAD_COLOR)
+        elif h_parameters.input_channels == 1:
+            # Read the image in grayscale.
+            img = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
+
+        # Resize the image and calculate the resizing ratio.
+        img, ratio = preprocess.format_image(img)
+        X_test.append(img)
+
+        # Initialize arrays for bounding boxes, labels, and object existence.
+        bboxes = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.bbox_number*h_parameters.objects_number))
+        labels = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.objects_number))
+        obj_exist = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, 1))
+
+        # Initialize an array to keep track of the number of objects in each grid cell.
+        objects_numbers = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition))
+        
+        for obj in preprocess.tr_roots[index].findall('object'):
+
+            label = preprocess.h.image_classes[0][obj.find('name').text]
+            
+            xmin = int(obj.find('bndbox/xmin').text)
+            ymin = int(obj.find('bndbox/ymin').text)
+            xmax = int(obj.find('bndbox/xmax').text)
+            ymax = int(obj.find('bndbox/ymax').text)
+            w, h = (xmax-xmin),(ymax-ymin)
+            bbox =  preprocess.format_bbox([xmin, ymin, w, h], ratio)
+
+            grid_x, grid_y = preprocess.check_obj_grid_part(bbox)
+
+            obj_num = int(objects_numbers[grid_x, grid_y])
+
+            start_bbox_point =  int(h_parameters.bbox_number*obj_num)
+            end_bbox_point = start_bbox_point + h_parameters.bbox_number
+
+            bboxes[grid_x, grid_y, start_bbox_point:end_bbox_point] = bbox
+            labels[grid_x, grid_y, obj_num] = label
+            obj_exist[grid_x, grid_y, 0] = obj_num
+
+            if obj_num < (h_parameters.objects_number-1):
+                objects_numbers[grid_x, grid_y] += 1
+
+        y_test_classification.append(labels)
+        y_test_detection.append(bboxes)
+        y_test_obj_exist.append(obj_exist)
+
+    return X_test, y_test_obj_exist, y_test_classification, y_test_detection
 
 
 def prepare_data_train(h_parameters):
@@ -161,8 +321,12 @@ def prepare_data_train(h_parameters):
 
             prev_time = time.time()
 
-        # Read the image in grayscale.
-        img = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
+        if h_parameters.input_channels == 3:
+            # Read the image in color.
+            img = cv.imread(img_path, cv.IMREAD_COLOR)
+        elif h_parameters.input_channels == 1:
+            # Read the image in grayscale.
+            img = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
 
         # Resize the image and calculate the resizing ratio.
         img, ratio = preprocess.format_image(img)
@@ -234,14 +398,19 @@ def prepare_data_test(h_parameters):
 
             prev_time = time.time()
 
-        img = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
+        if h_parameters.input_channels == 3:
+            # Read the image in color.
+            img = cv.imread(img_path, cv.IMREAD_COLOR)
+        elif h_parameters.input_channels == 1:
+            # Read the image in grayscale.
+            img = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
 
         img, ratio = preprocess.format_image(img)
         X_test.append(img)
 
         bboxes = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.bbox_number*h_parameters.objects_number))
         labels = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.num_classes*h_parameters.objects_number))
-        obj_exist = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.objects_number))
+        obj_exist = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition, h_parameters.objects_number + 1))
 
         objects_numbers = np.zeros((h_parameters.grid_partition, h_parameters.grid_partition))
         
@@ -269,7 +438,7 @@ def prepare_data_test(h_parameters):
 
             bboxes[grid_x, grid_y, start_bbox_point:end_bbox_point] = bbox
             labels[grid_x, grid_y, start_label_point:end_label_point] = label
-            obj_exist[grid_x, grid_y, obj_num] = 1
+            obj_exist[grid_x, grid_y, obj_num + 1] = 1
 
             if obj_num < (h_parameters.objects_number-1):
                 objects_numbers[grid_x, grid_y] += 1

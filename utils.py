@@ -1,11 +1,11 @@
 import cv2 as cv
 import numpy as np
 
-def format_image(img, image_size):
+def format_image(img, image_size, channels=3):
     # Function to resize and format an input image to a specified image size.
 
     # Get the height and width of the input image.
-    height, width, = img.shape 
+    height, width, = img.shape[:2] 
     # Calculate the maximum dimension (height or width).
     max_size = max(height, width)
     # Calculate the ratio by which the image will be resized to fit the specified image size.
@@ -16,9 +16,9 @@ def format_image(img, image_size):
     # Create a new image of the specified size filled with zeros.
     new_size = (new_width, new_height)
     resized = cv.resize(img, new_size, interpolation= cv.INTER_LINEAR)
-    new_image = np.zeros((image_size, image_size), dtype=np.uint8)
+    new_image = np.zeros((image_size, image_size, channels), dtype=np.uint8)
     # Copy the resized image into the top-left corner of the new image.
-    new_image[0:new_height, 0:new_width] = resized
+    new_image[0:new_height, 0:new_width, 0:channels] = resized
 
     return new_image
 
