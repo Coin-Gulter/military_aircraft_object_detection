@@ -173,7 +173,7 @@ def default_configs():
     # model.
     h.name = 'military_aircraft'
     h.pretrained = False
-    h.save_model_name = 'military_aircraft_bbox.keras'
+    h.save_model_name = 'pretrained_eights.h5'
     h.save_model_folder = './'
 
     # activation type: see activation_fn in utils.py.
@@ -215,8 +215,8 @@ page_model_param_dict = {
     'military_aircraft':
         dict(
             image_size = 448,
-            num_epochs = 2,
-            pretrained = False,
+            num_epochs = 4,
+            pretrained = True,
             learning_rate = 0.00005,
             with_test = True,
             validation_split = 0.1,

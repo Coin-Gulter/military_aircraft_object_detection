@@ -40,19 +40,16 @@ class bbox_ai():
         self.metric_objects_f1 = F1Score()
         self.metric_class_f1 = F1Score()
 
+        # Create the model.
+        print('Creating model...')
+        self.model = self.yolo_v3(self.h.image_size, self.h.objects_number, self.h.num_classes, self.h.bbox_number)
+        print('Model created')
 
         # Check if the pretrained model is used.
         if self.h.pretrained:
             print('Loading pretrained model...')
-            self.model = tf.keras.models.load_model(os.path.join(self.h.save_model_folder, self.h.save_model_name))
+            self.model.load_weights(os.path.join(self.h.save_model_folder, self.h.save_model_name))
             print('Model loaded')
-        else:
-            # Create the model.
-            print('Creating model...')
-
-            self.model = self.yolo_v3(self.h.image_size, self.h.objects_number, self.h.num_classes, self.h.bbox_number)
-
-            print('Model created')
 
         # Summarize the model.
         self.model.summary()
@@ -162,13 +159,13 @@ class bbox_ai():
         return acc
 
     def my_precision(self, y_true, y_pred):
-        self.metric_precision.update_state(tf.argmax(y_true), tf.argmax(y_pred))
+        self.metric_precision.update_state(y_true, y_pred)
         acc = self.metric_precision.result()
         self.metric_precision.reset_state()
         return acc
     
     def my_recall(self, y_true, y_pred):
-        self.metric_recall.update_state(tf.argmax(y_true), tf.argmax(y_pred))
+        self.metric_recall.update_state(y_true, y_pred)
         acc = self.metric_recall.result()
         self.metric_recall.reset_state()
         return acc
@@ -207,17 +204,19 @@ class bbox_ai():
 
         # Evaluate the model on the test set.
         if self.h.with_test:
-            test_loss, test_obj_loss, test_class_loss, test_detect_loss, test_obj_acc, test_class_acc, test_detect_mse = self.model.evaluate(X_test, y_test)
+            test_loss, test_obj_loss, test_class_loss, test_detect_loss, test_obj_acc, _, _, test_obj_f1_score, test_class_acc, _, _, test_class_f1_score, test_detect_mse = self.model.evaluate(X_test, y_test)
             print('test loss -- ', test_loss)
             print('Tested objects loss:', test_obj_loss)
             print('Tested classification loss:', test_class_loss)
             print('Tested detect loss:', test_detect_loss)
             print('Tested objects accuracy:', test_obj_acc)
+            print('Tested objects f1 score:', test_obj_f1_score)
             print('Tested classification accuracy:', test_class_acc)
+            print('Tested objects f1 score:', test_class_f1_score)
             print('Tested detect mse:', test_detect_mse)
 
         # Save the model.
-        self.model.save(os.path.join(self.h.save_model_folder, self.h.save_model_name))
+        self.model.save_weights(os.path.join(self.h.save_model_folder, self.h.save_model_name))
     
 
     def predict(self, img:np.ndarray):

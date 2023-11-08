@@ -11,8 +11,8 @@ def main():
     h_parameters = parameters.get_config()
     bbox_ai = model.bbox_ai(h_parameters)
 
-    print('start training')
-    bbox_ai.train()
+    # print('start training')
+    # bbox_ai.train()
 
     print('predicting')
     img = cv.imread('43.jpg', cv.IMREAD_COLOR)
@@ -24,7 +24,7 @@ def main():
     for x, row in enumerate(objects[0]):
         for y, classes in enumerate(row):
             index_obj = np.argmax(classes)
-            if index_obj != 0 and classes[index_obj] > 0.2:
+            if index_obj != 0 and classes[index_obj] > 0.01:
                 index_classification = np.argmax(classification[0][x][y])
                 if index_classification != 0:
                     class_name = utils.get_key_from_dict(h_parameters.image_classes[0], index_classification)
