@@ -207,10 +207,6 @@ def default_configs():
     h.learning_rate = 0.0001  # 0.008 for adam.
     h.lr_dropout = 0.4
     h.num_epochs = 10
-    h.metrics = [{'obj_exist' : 'accuracy', 'obj_classification' : 'accuracy', 'obj_detection' : 'mse' }]
-
-    # loss
-    h.loss = [{'obj_exist' : 'binary_crossentropy', 'obj_classification' : 'categorical_crossentropy', 'obj_detection' : 'mse' }] 
 
     return h
 

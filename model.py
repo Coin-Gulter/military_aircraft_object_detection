@@ -9,6 +9,7 @@ import tensorflow as tf
 from tensorflow.keras import Model
 from tensorflow.keras.layers import Conv2D, Dropout, Dense, Flatten, UpSampling2D, ZeroPadding2D, LeakyReLU, Add, Concatenate, Input, Softmax, Activation, Reshape, MaxPooling2D
 from tensorflow.keras.regularizers import l2
+from tensorflow.keras.metrics import Recall, Precision, Accuracy, F1Score
 
  
 class BatchNormalization(tf.keras.layers.BatchNormalization):
@@ -33,6 +34,12 @@ class bbox_ai():
 
         self.h = h_parameters
         self.input_size = (self.h.image_size, self.h.image_size, 1)
+        self.metric_acc = tf.keras.metrics.Accuracy()
+        self.metric_precision = Precision()
+        self.metric_recall = Recall()
+        self.metric_objects_f1 = F1Score()
+        self.metric_class_f1 = F1Score()
+
 
         # Check if the pretrained model is used.
         if self.h.pretrained:
@@ -148,6 +155,31 @@ class bbox_ai():
 
             return Model(inputs, (obj_exist_out, obj_class_out, obj_detect_out), name='yolov3')
 
+    def my_accuracy(self, y_true, y_pred):
+        self.metric_acc.update_state(tf.argmax(y_true), tf.argmax(y_pred))
+        acc = self.metric_acc.result()
+        self.metric_acc.reset_state()
+        return acc
+
+    def my_precision(self, y_true, y_pred):
+        self.metric_precision.update_state(tf.argmax(y_true), tf.argmax(y_pred))
+        acc = self.metric_precision.result()
+        self.metric_precision.reset_state()
+        return acc
+    
+    def my_recall(self, y_true, y_pred):
+        self.metric_recall.update_state(tf.argmax(y_true), tf.argmax(y_pred))
+        acc = self.metric_recall.result()
+        self.metric_recall.reset_state()
+        return acc
+
+    def my_f1_score(self, y_true, y_pred):
+        f1 = 2*(self.my_recall(y_true, y_pred) * self.my_precision(y_true, y_pred)) / \
+            (self.my_recall(y_true, y_pred) + self.my_precision(y_true, y_pred))
+        return f1
+
+
+
     def train(self):
         # Method to train the model.
 
@@ -160,7 +192,11 @@ class bbox_ai():
         # print('y train - ', y_train)
 
         # Compile the model.
-        self.model.compile(optimizer=self.h.optimizer, loss=self.h.loss[0], metrics=self.h.metrics[0])
+        self.model.compile(optimizer=self.h.optimizer, 
+                           loss={'obj_exist' : 'binary_crossentropy', 'obj_classification' : 'categorical_crossentropy', 'obj_detection' : 'mse' }, 
+                           metrics={'obj_exist' : [ self.my_accuracy, self.my_precision, self.my_recall, self.my_f1_score], 
+                                    'obj_classification' : [ self.my_accuracy, self.my_precision, self.my_recall, self.my_f1_score], 
+                                    'obj_detection' : 'mse' })
 
         # Train the model.
         self.model.fit(X_train, 
